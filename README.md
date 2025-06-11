@@ -1,120 +1,73 @@
-# bleamit
+# bleamit v1.0
 
-**BLE + ESP-NOW RGB Lighting Control Framework**
-
-Bleamit is a modular lighting control system built on ESP32 devices, combining ESP-NOW mesh networking with BLE broadcasting and Art-Net/DMX input support. It’s designed for scalable venue-wide lighting effects — from small interactive installations to stadium-level audience experiences.
+A lightweight ESP-NOW + BLE broadcast system designed for low-latency RGB lighting sync across distributed nodes — now supporting **Hub architecture**.
 
 ---
 
-## 🔧 Project Structure
+## 🧠 Architecture
 
-```
-bleamit/
-├── base/         # Main DMX receiver and ESP-NOW broadcaster
-├── node/         # BLE advertiser nodes receiving color payloads
-├── hub/          # (Planned) ESP-NOW mesh relay layer for large venues
-├── flutter_app/  # (Planned) BLE color receiver mobile app
-├── README.md
+```text
+[ BASE ] → [ HUB ] → [ NODE ]
 ```
 
----
+- **Base**: Generates RGB values and transmits them over ESP-NOW to the Hub.
+- **Hub**: Relays RGB values via ESP-NOW to Nodes and advertises them over BLE.
+- **Node**: Receives RGB via ESP-NOW, advertises the color over BLE, and sends heartbeats upstream.
 
-## 🚀 Current Status
-
-✅ Working:
-- **ESP-NOW base → node communication**
-- **BLE advertising from nodes to mobile devices**
-- **Channel synchronization using SSID scanning**
-- **Heartbeat system for base to track node check-ins**
-
-🔧 In Progress:
-- Multi-base + mesh-aware hub system
-- Scalable seat-based payload filtering
-- Flutter app v2 with larger payload parsing
-- Web-based dashboard with pixel mapping and analytics
+This hub-based design supports large-scale event lighting where Base is Wi-Fi connected, Hubs relay to different regions, and Nodes remain lightweight.
 
 ---
 
-## 📡 System Overview
+## 📡 Channel Synchronization
 
-### Base Device
-- Connects to Wi-Fi
-- Receives DMX/Art-Net input (future)
-- Broadcasts RGB+Token payload via ESP-NOW
-- Receives heartbeat replies from nodes
-- Advertises SSID to help nodes sync to Wi-Fi channel
+Each device discovers its ESP-NOW channel by scanning SSIDs:
 
-### Node Device
-- Scans for base SSID and syncs channel
-- Initializes ESP-NOW + BLE
-- Receives RGB color payloads from base
-- Advertises updated color data via BLE to nearby mobile apps
-- Sends heartbeat every few seconds with its MAC address
+- **Base**: Sets softAP as `bleamit-chX`
+- **Hub**: Scans for `bleamit-chX` → sets channel → starts `bleamit-hub-X`
+- **Node**: Scans for `bleamit-hub-X` → sets channel → starts `bleamit-node-X`
 
-### Planned Hub Device
-- Relays ESP-NOW packets from base to further-away nodes
-- Supports mesh networking for larger venues
-- Filters payloads for seat-specific mapping
+This ensures a clean, scalable chain without hardcoded channels or BLE configuration.
 
 ---
 
-## 📱 Flutter App
+## 🔄 Heartbeat Flow
 
-Current functionality:
-- Scans for BLE packets from `bleamit-node`
-- Updates screen color from `[R,G,B,TOKEN]` data
-
-Planned:
-- Accepts larger BLE payloads
-- Includes seat number filtering
-- Sends debug logs or analytics
+- **Node → Hub**: Every 5 seconds, the Node sends a heartbeat to the Hub.
+- **Hub → Base**: Hub sends heartbeats and reports active Node MACs.
+- All devices log alive status to Serial for visibility.
 
 ---
 
-## ⚡ Example BLE Payload Format
+## 🚀 Version 1.0 Setup
 
-For mobile devices:
-```
-[Device_ID (2B), Seat_Row (1B), Seat_Col (1B), R (1B), G (1B), B (1B), TOKEN (1B)]
-```
+### `base.ino`
+- Uses WiFiManager for user setup.
+- Broadcasts RGB payload to Hub over ESP-NOW.
+- Advertises ESP-NOW channel via SSID: `bleamit-chX`.
 
-> Keep packets < 31 bytes for BLE advertising compatibility
+### `hub.ino`
+- Scans for `bleamit-chX` SSID from Base.
+- Sets ESP-NOW channel to match Base.
+- Relays RGB data over ESP-NOW broadcast to all listening Nodes.
+- Sends heartbeat to Base and tracks Node check-ins.
+- Advertises current RGB value over BLE.
 
----
-
-## 🗺️ Scalable Mesh Design
-
-- **1 Base → many Hubs → many Nodes**
-- Supports redundancy and long-range mesh layout
-- Each device forwards only what's relevant to its region
-- Payloads can be filtered by seat map on Hubs
-
----
-
-## 💡 Goals
-
-- Ultra-low latency color sync (<200ms total chain)
-- Fully offline-capable deployments
-- Mobile app works without pairing or connection
-- Modular system that scales from small installs to full arenas
+### `node.ino`
+- Scans for `bleamit-hub-X` SSID from Hub.
+- Sets ESP-NOW channel and listens for RGB broadcast.
+- Sends periodic heartbeat to Hub.
+- Updates local BLE advertisement with current color.
 
 ---
 
-## 🛠️ Setup
+## 🧪 Usage
 
-You can flash each firmware folder (`base/`, `node/`) using Arduino IDE or PlatformIO. All code uses ESP32 (Dev Module or S3 recommended).
-
----
-
-## 📦 Future Additions
-
-- `hub/` firmware
-- `flutter_app/` update
-- Web-based seat mapper + Art-Net proxy
-- OTA update system for all devices
+1. Flash and boot the **Base**, connect to Wi-Fi when prompted.
+2. Power on the **Hub** — it scans for Base SSID, syncs channel, and begins relaying.
+3. Boot one or more **Nodes** — they scan the Hub SSID, receive RGB values, and advertise over BLE.
 
 ---
 
-## 📄 License
+## 🏷 Version
 
-MIT License — Open source and hackable. Build your own lightshows.
+- `v1.0` – Initial stable release with full Base → Hub → Node flow and BLE broadcasting.

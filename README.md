@@ -2,22 +2,20 @@
 
 **BLE + ESP-NOW RGB Lighting Control Framework**
 
-Bleamit is a modular lighting control system built on ESP32 devices, 
-combining ESP-NOW mesh networking with BLE broadcasting and Art-Net/DMX 
-input support. It’s designed for scalable venue-wide lighting effects — 
-from small interactive installations to stadium-level audience 
-experiences.
+Bleamit is a modular lighting control system built on ESP32 devices, combining ESP-NOW mesh networking with BLE broadcasting and Art-Net/DMX input support. It’s designed for scalable venue-wide lighting effects — from small interactive installations to stadium-level audience experiences.
 
 ---
 
 ## 🔧 Project Structure
 
+```
 bleamit/
-├── base/ # Main DMX receiver and ESP-NOW broadcaster
-├── node/ # BLE advertiser nodes receiving color payloads
-├── hub/ # (Planned) ESP-NOW mesh relay layer for large venues
-├── flutter_app/ # (Planned) BLE color receiver mobile app
+├── base/         # Main DMX receiver and ESP-NOW broadcaster
+├── node/         # BLE advertiser nodes receiving color payloads
+├── hub/          # (Planned) ESP-NOW mesh relay layer for large venues
+├── flutter_app/  # (Planned) BLE color receiver mobile app
 ├── README.md
+```
 
 ---
 
@@ -76,8 +74,9 @@ Planned:
 ## ⚡ Example BLE Payload Format
 
 For mobile devices:
-[Device_ID (2B), Seat_Row (1B), Seat_Col (1B), R (1B), G (1B), B (1B), 
-TOKEN (1B)]
+```
+[Device_ID (2B), Seat_Row (1B), Seat_Col (1B), R (1B), G (1B), B (1B), TOKEN (1B)]
+```
 
 > Keep packets < 31 bytes for BLE advertising compatibility
 
@@ -103,8 +102,7 @@ TOKEN (1B)]
 
 ## 🛠️ Setup
 
-You can flash each firmware folder (`base/`, `node/`) using Arduino IDE or 
-PlatformIO. All code uses ESP32 (Dev Module or S3 recommended).
+You can flash each firmware folder (`base/`, `node/`) using Arduino IDE or PlatformIO. All code uses ESP32 (Dev Module or S3 recommended).
 
 ---
 
@@ -120,6 +118,3 @@ PlatformIO. All code uses ESP32 (Dev Module or S3 recommended).
 ## 📄 License
 
 MIT License — Open source and hackable. Build your own lightshows.
-
----
-

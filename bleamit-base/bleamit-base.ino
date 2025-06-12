@@ -3,14 +3,20 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <esp_mac.h>
+#include <WiFiUdp.h>
 #include <map>
 
 #define TOKEN 0xAB
-uint8_t broadcastPeer[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+#define ARTNET_PORT 6454
+#define DMX_UNIVERSE 0
+#define DMX_CHANNEL_RED 0   // Art-Net starts at channel 0
+#define DMX_CHANNEL_GREEN 1
+#define DMX_CHANNEL_BLUE 2
 
+WiFiUDP udp;
+uint8_t broadcastPeer[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint8_t red = 0, green = 0, blue = 0;
 unsigned long lastLog = 0;
-
 std::map<String, unsigned long> nodeLastSeen;
 
 uint8_t getWiFiChannel() {
@@ -66,6 +72,31 @@ void sendColor() {
   }
 }
 
+bool parseArtNetPacket() {
+  if (udp.parsePacket()) {
+    uint8_t packet[530];
+    int len = udp.read(packet, sizeof(packet));
+    if (len < 18) return false;
+
+    // Check for "Art-Net" header
+    if (memcmp(packet, "Art-Net", 7) != 0 || packet[8] != 0x00 || packet[9] != 0x50) {
+      return false; // Not ArtDMX
+    }
+
+    uint16_t universe = packet[14] | (packet[15] << 8);
+    uint16_t dmxLen = packet[16] << 8 | packet[17];
+    if (universe != DMX_UNIVERSE || dmxLen < 3) return false;
+
+    red   = packet[18 + DMX_CHANNEL_RED];
+    green = packet[18 + DMX_CHANNEL_GREEN];
+    blue  = packet[18 + DMX_CHANNEL_BLUE];
+
+    Serial.printf("🎨 ArtNet: R=%d G=%d B=%d\n", red, green, blue);
+    return true;
+  }
+  return false;
+}
+
 void setup() {
   Serial.begin(115200);
   WiFi.mode(WIFI_STA);
@@ -89,21 +120,25 @@ void setup() {
   WiFi.softAP(ssid.c_str(), nullptr);
   Serial.printf("📡 Broadcasting SSID: %s on channel %d\n", ssid.c_str(), ch);
   delay(500);
+
+  udp.begin(ARTNET_PORT);
+  Serial.printf("🎧 Listening for Art-Net on UDP port %d\n", ARTNET_PORT);
   Serial.println("🚀 Base setup complete!");
 }
 
 void loop() {
-  static uint8_t state = 0;
-  switch (state++ % 5) {
-    case 0: red = 0; green = 0; blue = 255; break;
-    case 1: red = 255; green = 0; blue = 0; break;
-    case 2: red = 0; green = 255; blue = 0; break;
-    case 3: red = 255; green = 0; blue = 255; break;
-    case 4: red = 0; green = 255; blue = 255; break;
+  static unsigned long lastSend = 0;
+
+  if (parseArtNetPacket()) {
+    sendColor();
+    lastSend = millis();
   }
 
-  sendColor();
-  delay(2000);
+  // Optionally resend last color every 2s to keep devices updated
+  if (millis() - lastSend > 2000) {
+    sendColor();
+    lastSend = millis();
+  }
 
   if (millis() - lastLog > 10000) {
     Serial.printf("🔍 Known nodes: %d\n", (int)nodeLastSeen.size());

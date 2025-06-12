@@ -1,73 +1,73 @@
-# bleamit v1.0
+# bleamit
 
-A lightweight ESP-NOW + BLE broadcast system designed for low-latency RGB lighting sync across distributed nodes — now supporting **Hub architecture**.
-
----
+**bleamit** is a synchronized lighting system using ESP32 devices with ESP-NOW and BLE to broadcast color states to mobile devices in large environments. It supports Art-Net input, heartbeat tracking, and modular roles (base, hub, node).
 
 ## 🧠 Architecture
 
-```text
-[ BASE ] → [ HUB ] → [ NODE ]
+- **Base**: Receives Art-Net DMX packets over Wi-Fi and sends RGB values via ESP-NOW.
+- **Hub** *(optional)*: Relays ESP-NOW color data from base to nodes.
+- **Node**: Receives ESP-NOW and advertises RGB color over BLE (for mobile app sync).
+
+## 🚀 Getting Started
+
+### 1. Flash the Devices
+
+- **base.ino** — Upload to the base ESP32 (M5Atom or equivalent)
+- **hub.ino** — Optional relay device (only needed for large areas)
+- **node.ino** — Upload to nodes that will BLE advertise
+
+### 2. Connect Base to Wi-Fi
+
+- The base uses **WiFiManager** — connect to the `bleamit-setup` AP on first boot and select your Wi-Fi network.
+
+---
+
+## 🎨 Art-Net Input (Base)
+
+The base device listens for **Art-Net** packets on:
+
+- **UDP Port**: `6454`
+- **Universe**: `0`
+- **DMX Channels**:
+  - Channel 1 → **Red**
+  - Channel 2 → **Green**
+  - Channel 3 → **Blue**
+
+### Test with Python
+
+Use the included script to simulate Art-Net packets:
+
+```bash
+python test_art_net.py <ESP32_BASE_IP>
 ```
 
-- **Base**: Generates RGB values and transmits them over ESP-NOW to the Hub.
-- **Hub**: Relays RGB values via ESP-NOW to Nodes and advertises them over BLE.
-- **Node**: Receives RGB via ESP-NOW, advertises the color over BLE, and sends heartbeats upstream.
-
-This hub-based design supports large-scale event lighting where Base is Wi-Fi connected, Hubs relay to different regions, and Nodes remain lightweight.
+It will cycle through common RGB values and transmit them to the base over Art-Net.
 
 ---
 
-## 📡 Channel Synchronization
+## 💡 BLE Advertising
 
-Each device discovers its ESP-NOW channel by scanning SSIDs:
-
-- **Base**: Sets softAP as `bleamit-chX`
-- **Hub**: Scans for `bleamit-chX` → sets channel → starts `bleamit-hub-X`
-- **Node**: Scans for `bleamit-hub-X` → sets channel → starts `bleamit-node-X`
-
-This ensures a clean, scalable chain without hardcoded channels or BLE configuration.
+Only **nodes** perform BLE advertising, broadcasting RGB color in the **manufacturer data** format. The mobile app scans for these and updates its display.
 
 ---
 
-## 🔄 Heartbeat Flow
+## 📡 Heartbeat + Sync
 
-- **Node → Hub**: Every 5 seconds, the Node sends a heartbeat to the Hub.
-- **Hub → Base**: Hub sends heartbeats and reports active Node MACs.
-- All devices log alive status to Serial for visibility.
-
----
-
-## 🚀 Version 1.0 Setup
-
-### `base.ino`
-- Uses WiFiManager for user setup.
-- Broadcasts RGB payload to Hub over ESP-NOW.
-- Advertises ESP-NOW channel via SSID: `bleamit-chX`.
-
-### `hub.ino`
-- Scans for `bleamit-chX` SSID from Base.
-- Sets ESP-NOW channel to match Base.
-- Relays RGB data over ESP-NOW broadcast to all listening Nodes.
-- Sends heartbeat to Base and tracks Node check-ins.
-- Advertises current RGB value over BLE.
-
-### `node.ino`
-- Scans for `bleamit-hub-X` SSID from Hub.
-- Sets ESP-NOW channel and listens for RGB broadcast.
-- Sends periodic heartbeat to Hub.
-- Updates local BLE advertisement with current color.
+- Nodes send heartbeat packets to hubs
+- Hubs send heartbeats to base
+- The base tracks `nodeLastSeen` to monitor active nodes
 
 ---
 
-## 🧪 Usage
+## 📁 Files
 
-1. Flash and boot the **Base**, connect to Wi-Fi when prompted.
-2. Power on the **Hub** — it scans for Base SSID, syncs channel, and begins relaying.
-3. Boot one or more **Nodes** — they scan the Hub SSID, receive RGB values, and advertise over BLE.
+- `base.ino`: ESP-NOW + Art-Net receiver
+- `hub.ino`: ESP-NOW relay (no BLE)
+- `node.ino`: ESP-NOW receiver + BLE broadcaster
+- `test_art_net.py`: Art-Net test script for local testing
 
 ---
 
-## 🏷 Version
+## 📜 License
 
-- `v1.0` – Initial stable release with full Base → Hub → Node flow and BLE broadcasting.
+MIT License. Use freely, adapt as needed.

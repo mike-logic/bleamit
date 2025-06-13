@@ -1,36 +1,95 @@
 # bleamit
 
-**bleamit** is a synchronized lighting and color broadcast system designed for live events, concerts, and interactive installations.
+**bleamit** is a synchronized lighting system using ESP32 devices with ESP-NOW and BLE to broadcast color states to mobile devices in large environments. It supports Art-Net input, heartbeat tracking, and modular roles (base, hub, node).
 
-It uses ESP32 microcontrollers with BLE advertisements and ESP-NOW communication to broadcast color data to mobile phones and LED nodes in real time.
+## 🧠 Architecture
 
-## Roles
+- **Base**: Receives Art-Net DMX packets over Wi-Fi and sends RGB values via ESP-NOW.
+- **Hub** *(optional)*: Relays ESP-NOW color data from base to nodes.
+- **Node**: Receives ESP-NOW and advertises RGB color over BLE (for mobile app sync).
+- **Standalone**: Self-contained Art-Net listener that advertises RGB over BLE with no ESP-NOW — ideal for small venues or solo setups.
 
-### 🟦 Base
-- Connects to Art-Net or proxy server
-- Broadcasts RGB color data to hubs and nodes
-- Hosts the local dashboard for monitoring and approval
+## 🚀 Getting Started
 
-### 🟩 Hub
-- Relays ESP-NOW color data from base to nodes
-- Handles seat/section-specific packet filtering
-- Sends heartbeat packets back to base
+### 1. Flash the Devices
 
-### 🟨 Node
-- Receives color data from base or hub
-- Advertises the current RGB color over BLE to nearby smartphones
-- Sends heartbeat packets for presence tracking
+- **base.ino** — Upload to the base ESP32 (M5Atom or equivalent)
+- **hub.ino** — Optional relay device (only needed for large areas)
+- **node.ino** — Upload to nodes that will BLE advertise
+- **standalone.ino** — For small installations that only need one broadcaster
+
+### 2. Connect Base or Standalone to Wi-Fi
+
+- Both use **WiFiManager** — connect to the `bleamit-setup` AP on first boot and select your Wi-Fi network.
 
 ---
 
-## License
-MIT License — 2025
+## 🎨 Art-Net Input (Base + Standalone)
 
-### 🟥 Standalone
+The base and standalone devices listen for **Art-Net** packets on:
 
-- Does **not** use ESP-NOW — no peer discovery or heartbeat
-- Listens directly for Art-Net DMX packets on UDP port 6454
-- Broadcasts BLE advertisements with RGB values exactly like a node
-- Ideal for **small venues** or **standalone installations**
-- Runs WiFiManager for easy setup
-- Includes a built-in web dashboard with live logs at `/`
+- **UDP Port**: `6454`
+- **Universe**: `0`
+- **DMX Channels**:
+  - Channel 1 → **Red**
+  - Channel 2 → **Green**
+  - Channel 3 → **Blue**
+
+### Test with Python
+
+Use the included script to simulate Art-Net packets:
+
+```bash
+python test_art_net.py <ESP32_IP>
+```
+
+It will cycle through common RGB values and transmit them to the device over Art-Net.
+
+---
+
+## 💡 BLE Advertising
+
+**Nodes and Standalone devices** perform BLE advertising, broadcasting RGB color in the **manufacturer data** format. The mobile app scans for these and updates its display.
+
+**BLE Format:**
+
+| Byte Index | Value                |
+|------------|----------------------|
+| 0–1        | `0xFF 0xFF` (header) |
+| 2–4        | `R G B` color        |
+| 5          | `0xAB` (token)       |
+
+---
+
+## 📡 Heartbeat + Sync
+
+- Nodes send heartbeat packets to hubs
+- Hubs send heartbeats to base
+- The base tracks `nodeLastSeen` to monitor active nodes
+- **Standalone** devices do not participate in ESP-NOW or heartbeat logic
+
+---
+
+## 🖥 Web Dashboard (Base + Standalone)
+
+The base and standalone devices serve a web dashboard at their IP address:
+
+- View current connection info
+- Review live RGB values
+- Scroll real-time serial logs in browser (`/log`, `/info`)
+
+---
+
+## 📁 Files
+
+- `base.ino`: ESP-NOW + Art-Net receiver + dashboard
+- `hub.ino`: ESP-NOW relay (no BLE)
+- `node.ino`: ESP-NOW receiver + BLE broadcaster
+- `standalone.ino`: Art-Net only BLE broadcaster with web dashboard
+- `test_art_net.py`: Art-Net test script for local testing
+
+---
+
+## 📜 License
+
+MIT License. Use freely, adapt as needed.

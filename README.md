@@ -1,73 +1,104 @@
-# bleamit
+# Bleamit
 
-**bleamit** is a synchronized lighting system using ESP32 devices with ESP-NOW and BLE to broadcast color states to mobile devices in large environments. It supports Art-Net input, heartbeat tracking, and modular roles (base, hub, node).
+**Bleamit** is a lightweight, real-time ESP32 lighting and display sync system designed for stadiums, live events, or distributed LED installations.
 
-## 🧠 Architecture
-
-- **Base**: Receives Art-Net DMX packets over Wi-Fi and sends RGB values via ESP-NOW.
-- **Hub** *(optional)*: Relays ESP-NOW color data from base to nodes.
-- **Node**: Receives ESP-NOW and advertises RGB color over BLE (for mobile app sync).
-
-## 🚀 Getting Started
-
-### 1. Flash the Devices
-
-- **base.ino** — Upload to the base ESP32 (M5Atom or equivalent)
-- **hub.ino** — Optional relay device (only needed for large areas)
-- **node.ino** — Upload to nodes that will BLE advertise
-
-### 2. Connect Base to Wi-Fi
-
-- The base uses **WiFiManager** — connect to the `bleamit-setup` AP on first boot and select your Wi-Fi network.
+This repository includes firmware for:
+- 🧠 `base` — broadcasts RGB data over ESP-NOW and BLE, receives Art-Net input, hosts a dashboard for device approval and monitoring.
+- 📡 `hub` — receives color from base, relays to nodes, and sends its own heartbeat to the base.
+- 💡 `node` — receives RGB values from base or hub, displays color via BLE advertising, and sends heartbeat to upstream.
 
 ---
 
-## 🎨 Art-Net Input (Base)
+## 🚀 Features
 
-The base device listens for **Art-Net** packets on:
+- ✅ Real-time color sync using ESP-NOW
+- ✅ Art-Net input support (from lighting consoles or PC software)
+- ✅ BLE advertising for nearby mobile apps (e.g. via Flutter)
+- ✅ WiFiManager config for easy setup
+- ✅ Built-in web dashboard to approve/reject devices and view status
+- ✅ Heartbeat-based device check-ins for monitoring
+- ✅ Device role detection: hub vs node
+- ✅ Channel auto-discovery via SSID scanning
 
-- **UDP Port**: `6454`
-- **Universe**: `0`
-- **DMX Channels**:
-  - Channel 1 → **Red**
-  - Channel 2 → **Green**
-  - Channel 3 → **Blue**
+---
 
-### Test with Python
+## 🗂 Directory Structure
 
-Use the included script to simulate Art-Net packets:
-
-```bash
-python test_art_net.py <ESP32_BASE_IP>
+```
+/bleamit-base/     # Firmware for the base device
+/bleamit-hub/      # Firmware for relaying hub device
+/bleamit-node/     # Firmware for endpoint nodes
+/dashboard_html.h  # Shared HTML UI for the dashboard
 ```
 
-It will cycle through common RGB values and transmit them to the base over Art-Net.
+---
+
+## 🌐 Web Dashboard
+
+Once connected, navigate to `http://<base-ip>/dashboard` to:
+
+- View connected nodes and hubs
+- Approve or reject pending devices
+- View last seen time and role (hub or node)
+- Monitor in real time
 
 ---
 
-## 💡 BLE Advertising
+## 🛠 Getting Started
 
-Only **nodes** perform BLE advertising, broadcasting RGB color in the **manufacturer data** format. The mobile app scans for these and updates its display.
+### Requirements
+- Platform: ESP32 boards (e.g., M5Stack AtomS3, generic ESP32 dev boards)
+- Arduino IDE or PlatformIO
+- Libraries:
+  - `esp_now`, `esp_wifi`, `WiFiManager`, `WebServer`, `WiFiUDP`
+  - NimBLE for BLE functionality (node only)
 
----
-
-## 📡 Heartbeat + Sync
-
-- Nodes send heartbeat packets to hubs
-- Hubs send heartbeats to base
-- The base tracks `nodeLastSeen` to monitor active nodes
-
----
-
-## 📁 Files
-
-- `base.ino`: ESP-NOW + Art-Net receiver
-- `hub.ino`: ESP-NOW relay (no BLE)
-- `node.ino`: ESP-NOW receiver + BLE broadcaster
-- `test_art_net.py`: Art-Net test script for local testing
+### Flashing
+- Each directory is a separate Arduino sketch.
+- Flash the correct one to your device:
+  - `base` to the controller
+  - `hub` to intermediary repeaters
+  - `node` to end units
 
 ---
 
-## 📜 License
+## 🔧 Configuration Notes
 
-MIT License. Use freely, adapt as needed.
+- **Art-Net** (port 6454) is only handled on the base.
+- **SoftAP SSIDs** encode channel numbers for auto channel sync:
+  - Base: `bleamit-ch#`
+  - Hub: `bleamit-hub-ch#`
+
+---
+
+## 📡 Communication Protocol
+
+| Type   | Direction        | Payload Format                  |
+|--------|------------------|----------------------------------|
+| Color  | Base → All       | `[0xAB, R, G, B]`                |
+| Heartbeat | Node/Hub → Base | `[0xAB, role]` (0x01=node, 0x02=hub) |
+
+---
+
+## 🧪 Debugging
+
+Use the serial monitor to track:
+- Heartbeats from devices
+- ESP-NOW send/receive events
+- Art-Net RGB values
+- BLE advertising state (on node)
+
+---
+
+## 🔐 Security
+
+- No authentication yet. Future updates will support:
+  - Tokenized heartbeat verification
+  - OTA firmware updates over ESP-NOW
+  - Per-device pairing
+
+---
+
+## 📦 License
+
+MIT

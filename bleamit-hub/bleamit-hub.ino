@@ -1,10 +1,10 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
-#include <NimBLEDevice.h>
 #include <map>
 
 #define TOKEN 0xAB
+#define ROLE_HUB 0x02
 #define HEARTBEAT_INTERVAL 5000
 
 uint8_t red = 0, green = 0, blue = 0;
@@ -14,23 +14,6 @@ bool colorReceived = false;
 
 uint8_t baseMAC[6] = {0};  // dynamically updated
 std::map<String, unsigned long> nodeLastSeen;
-
-void updateBLEAdvertisement() {
-  uint8_t payload[6] = { 0xFF, 0xFF, red, green, blue, TOKEN };
-
-  NimBLEAdvertisementData advData;
-  advData.setName("bleamit-hub");
-  advData.setManufacturerData(payload, sizeof(payload));
-
-  NimBLEDevice::getAdvertising()->stop();
-  delay(50);
-  NimBLEDevice::getAdvertising()->setAdvertisementData(advData);
-  NimBLEDevice::getAdvertising()->start();
-
-  Serial.printf("📱 BLE Updated: R=%d G=%d B=%d (Token=%02X)\n", red, green, blue, TOKEN);
-  Serial.printf("📱 BLE Payload: [%02X %02X %02X %02X %02X %02X]\n",
-                payload[0], payload[1], payload[2], payload[3], payload[4], payload[5]);
-}
 
 void sendToNodes() {
   uint8_t payload[4] = { TOKEN, red, green, blue };
@@ -58,7 +41,7 @@ void sendHeartbeatToBase() {
     Serial.println("✅ Base peer added");
   }
 
-  uint8_t payload[2] = { TOKEN, 0x01 };
+  uint8_t payload[2] = { TOKEN, ROLE_HUB };  // ✅ Send correct role
   esp_err_t result = esp_now_send(baseMAC, payload, sizeof(payload));
   if (result == ESP_OK) {
     Serial.println("💓 Heartbeat sent to Base");
@@ -75,7 +58,6 @@ void onDataSent(const uint8_t *mac, esp_now_send_status_t status) {
 
 void onDataReceived(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
   if (len == 4 && data[0] == TOKEN) {
-    // Color packet from Base
     memcpy(baseMAC, info->src_addr, 6);
     red = data[1];
     green = data[2];
@@ -83,13 +65,11 @@ void onDataReceived(const esp_now_recv_info_t *info, const uint8_t *data, int le
     colorReceived = true;
 
     Serial.printf("🔵 From Base: R=%d G=%d B=%d\n", red, green, blue);
-    updateBLEAdvertisement();
     sendToNodes();
     return;
   }
 
   if (len >= 2 && data[0] == TOKEN && data[1] == 0x01) {
-    // Heartbeat from Node
     char macStr[18];
     snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
              info->src_addr[0], info->src_addr[1], info->src_addr[2],
@@ -137,7 +117,6 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  // Scan for base SSID
   WiFi.mode(WIFI_STA);
   Serial.println("📶 Scanning for Base SSID...");
   int found = WiFi.scanNetworks();
@@ -157,7 +136,6 @@ void setup() {
     while (true) delay(1000);
   }
 
-  // Set channel
   WiFi.disconnect(true, true);
   delay(200);
   WiFi.mode(WIFI_AP_STA);
@@ -170,15 +148,6 @@ void setup() {
   Serial.printf("📡 Set ESP-NOW channel to %d\n", baseChannel);
 
   setupESPNow();
-
-  // BLE Init
-  NimBLEDevice::init("bleamit-hub");
-  NimBLEServer* pServer = NimBLEDevice::createServer();
-  NimBLEAdvertising* adv = pServer->getAdvertising();
-  adv->setMinInterval(100);
-  adv->setMaxInterval(200);
-  updateBLEAdvertisement();
-
   Serial.println("🚀 Hub setup complete");
 }
 

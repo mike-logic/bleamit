@@ -1,56 +1,65 @@
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <WebServer.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
-#include <esp_mac.h>
 #include <WiFiUdp.h>
 #include <map>
+#include <set>
+#include "dashboard_html.h"
 
 #define TOKEN 0xAB
-#define ARTNET_PORT 6454
-#define DMX_UNIVERSE 0
-#define DMX_CHANNEL_RED 0   // Art-Net starts at channel 0
-#define DMX_CHANNEL_GREEN 1
-#define DMX_CHANNEL_BLUE 2
+#define ART_NET_PORT 6454
 
+WebServer server(80);
 WiFiUDP udp;
+
+struct DeviceInfo {
+  unsigned long lastSeen;
+  uint8_t role;  // 0x01 = node, 0x02 = hub
+};
+
+std::map<String, DeviceInfo> nodeLastSeen;
+std::set<String> approvedDevices;
+std::set<String> pendingDevices;
+
 uint8_t broadcastPeer[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint8_t red = 0, green = 0, blue = 0;
 unsigned long lastLog = 0;
-std::map<String, unsigned long> nodeLastSeen;
+bool artnetOverride = false;
 
-uint8_t getWiFiChannel() {
-  uint8_t primary;
-  wifi_second_chan_t second;
-  esp_wifi_get_channel(&primary, &second);
-  return primary;
+String formatMAC(const uint8_t* mac) {
+  char buf[18];
+  snprintf(buf, sizeof(buf), "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  return String(buf);
+}
+
+void onDataReceived(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
+  if (len >= 2 && data[0] == TOKEN) {
+    String macStr = formatMAC(info->src_addr);
+    uint8_t role = data[1];
+    if (approvedDevices.count(macStr)) {
+      nodeLastSeen[macStr] = { millis(), role };
+    } else {
+      pendingDevices.insert(macStr);
+    }
+  }
 }
 
 void onDataSent(const uint8_t *mac, esp_now_send_status_t status) {
   if (status != ESP_NOW_SEND_SUCCESS) {
-    Serial.printf("❌ Failed to send ESP-NOW packet (err=%d)\n", status);
-  }
-}
-
-void onDataReceived(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
-  if (len >= 2 && data[0] == TOKEN && data[1] == 0x01) {
-    char macStr[18];
-    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
-             info->src_addr[0], info->src_addr[1], info->src_addr[2],
-             info->src_addr[3], info->src_addr[4], info->src_addr[5]);
-
-    nodeLastSeen[macStr] = millis();
-    Serial.printf("💓 Heartbeat from %s\n", macStr);
+    Serial.println("❌ ESP-NOW send failed");
   }
 }
 
 void setupESPNow() {
   if (esp_now_init() != ESP_OK) {
-    Serial.println("❌ Error initializing ESP-NOW");
+    Serial.println("❌ ESP-NOW init failed");
     return;
   }
-  esp_now_register_send_cb(onDataSent);
   esp_now_register_recv_cb(onDataReceived);
+  esp_now_register_send_cb(onDataSent);
 
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, broadcastPeer, 6);
@@ -59,93 +68,143 @@ void setupESPNow() {
 
   if (esp_now_add_peer(&peerInfo) == ESP_OK) {
     Serial.println("✅ Broadcast peer added");
-  } else {
-    Serial.println("❌ Failed to add broadcast peer");
   }
 }
 
 void sendColor() {
-  uint8_t payload[4] = { TOKEN, red, green, blue };
+  uint8_t payload[4] = {TOKEN, red, green, blue};
   esp_err_t result = esp_now_send(broadcastPeer, payload, sizeof(payload));
   if (result == ESP_OK) {
     Serial.printf("📤 Sent ESP-NOW: [%02X %02X %02X %02X]\n", TOKEN, red, green, blue);
   }
 }
 
-bool parseArtNetPacket() {
-  if (udp.parsePacket()) {
-    uint8_t packet[530];
-    int len = udp.read(packet, sizeof(packet));
-    if (len < 18) return false;
+void handleDashboard() {
+  server.send_P(200, "text/html", DASHBOARD_HTML);
+}
 
-    // Check for "Art-Net" header
-    if (memcmp(packet, "Art-Net", 7) != 0 || packet[8] != 0x00 || packet[9] != 0x50) {
-      return false; // Not ArtDMX
-    }
-
-    uint16_t universe = packet[14] | (packet[15] << 8);
-    uint16_t dmxLen = packet[16] << 8 | packet[17];
-    if (universe != DMX_UNIVERSE || dmxLen < 3) return false;
-
-    red   = packet[18 + DMX_CHANNEL_RED];
-    green = packet[18 + DMX_CHANNEL_GREEN];
-    blue  = packet[18 + DMX_CHANNEL_BLUE];
-
-    Serial.printf("🎨 ArtNet: R=%d G=%d B=%d\n", red, green, blue);
-    return true;
+void handleStatusJson() {
+  String json = "{ \"approved\": [";
+  bool first = true;
+  for (auto &pair : nodeLastSeen) {
+    if (!first) json += ",";
+    json += "{\"mac\":\"" + pair.first + "\",\"role\":" + String(pair.second.role) +
+            ",\"lastSeen\":" + String((millis() - pair.second.lastSeen) / 1000) + "}";
+    first = false;
   }
-  return false;
+  json += "], \"pending\": [";
+  first = true;
+  for (auto &mac : pendingDevices) {
+    if (!first) json += ",";
+    json += "\"" + mac + "\"";
+    first = false;
+  }
+  json += "] }";
+
+  server.send(200, "application/json", json);
+}
+
+void handleApprove() {
+  if (server.hasArg("mac")) {
+    String mac = server.arg("mac");
+    approvedDevices.insert(mac);
+    pendingDevices.erase(mac);
+    Serial.println("✅ Approved: " + mac);
+    server.send(200, "text/plain", "Approved " + mac);
+  } else {
+    server.send(400, "text/plain", "Missing MAC");
+  }
+}
+
+void handleReject() {
+  if (server.hasArg("mac")) {
+    String mac = server.arg("mac");
+    approvedDevices.erase(mac);
+    pendingDevices.erase(mac);
+    Serial.println("⛔ Rejected: " + mac);
+    server.send(200, "text/plain", "Rejected " + mac);
+  } else {
+    server.send(400, "text/plain", "Missing MAC");
+  }
+}
+
+void setupWebServer() {
+  server.on("/", []() {
+    server.sendHeader("Location", "/dashboard", true);
+    server.send(302, "text/plain", "");
+  });
+
+  server.on("/dashboard", handleDashboard);
+  server.on("/status.json", handleStatusJson);
+  server.on("/approve", handleApprove);
+  server.on("/reject", handleReject);
+  server.begin();
+  Serial.println("🌐 Web server started");
+}
+
+void checkArtNet() {
+  int packetSize = udp.parsePacket();
+  if (packetSize > 0) {
+    uint8_t buffer[530];
+    udp.read(buffer, sizeof(buffer));
+
+    if (memcmp(buffer, "Art-Net", 7) == 0 && buffer[8] == 0x00 && buffer[9] == 0x50) {
+      uint16_t universe = buffer[14] | (buffer[15] << 8);
+      uint16_t length = buffer[16] << 8 | buffer[17];
+
+      if (length >= 3 && universe == 0) {
+        red   = buffer[18];
+        green = buffer[19];
+        blue  = buffer[20];
+        artnetOverride = true;
+        Serial.printf("🎨 Art-Net RGB: %d %d %d\n", red, green, blue);
+        sendColor();
+      }
+    }
+  }
 }
 
 void setup() {
   Serial.begin(115200);
-  WiFi.mode(WIFI_STA);
 
+  WiFi.mode(WIFI_STA);
   WiFiManager wm;
   if (!wm.autoConnect("bleamit-setup")) {
-    Serial.println("❌ Failed to connect to WiFi");
+    Serial.println("❌ WiFi failed");
     return;
   }
 
-  Serial.print("✅ WiFi Connected. IP: ");
+  Serial.print("✅ IP: ");
   Serial.println(WiFi.localIP());
 
-  uint8_t ch = getWiFiChannel();
-  Serial.printf("📡 WiFi Channel: %d\n", ch);
-
   setupESPNow();
+  setupWebServer();
+
   WiFi.mode(WIFI_AP_STA);
   delay(100);
-  String ssid = "bleamit-ch" + String(ch);
+  String ssid = "bleamit-ch" + String(WiFi.channel());
   WiFi.softAP(ssid.c_str(), nullptr);
-  Serial.printf("📡 Broadcasting SSID: %s on channel %d\n", ssid.c_str(), ch);
-  delay(500);
+  Serial.println("🚀 Base ready");
 
-  udp.begin(ARTNET_PORT);
-  Serial.printf("🎧 Listening for Art-Net on UDP port %d\n", ARTNET_PORT);
-  Serial.println("🚀 Base setup complete!");
+  udp.begin(ART_NET_PORT);
 }
 
 void loop() {
+  static uint8_t state = 0;
   static unsigned long lastSend = 0;
 
-  if (parseArtNetPacket()) {
-    sendColor();
-    lastSend = millis();
-  }
+  server.handleClient();
+  checkArtNet();
 
-  // Optionally resend last color every 2s to keep devices updated
-  if (millis() - lastSend > 2000) {
-    sendColor();
-    lastSend = millis();
-  }
-
-  if (millis() - lastLog > 10000) {
-    Serial.printf("🔍 Known nodes: %d\n", (int)nodeLastSeen.size());
-    for (auto &entry : nodeLastSeen) {
-      unsigned long age = (millis() - entry.second) / 1000;
-      Serial.printf("   🟢 %s (last seen %lus ago)\n", entry.first.c_str(), age);
+  if (!artnetOverride && millis() - lastSend > 2000) {
+    switch (state++ % 5) {
+      case 0: red = 0; green = 0; blue = 255; break;
+      case 1: red = 255; green = 0; blue = 0; break;
+      case 2: red = 0; green = 255; blue = 0; break;
+      case 3: red = 255; green = 0; blue = 255; break;
+      case 4: red = 0; green = 255; blue = 255; break;
     }
-    lastLog = millis();
+    sendColor();
+    lastSend = millis();
   }
 }

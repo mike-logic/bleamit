@@ -49,7 +49,7 @@ void sendHeartbeat() {
 
   addHubPeerIfNeeded(hubMAC);
 
-  uint8_t payload[2] = { TOKEN, 0x01 };
+  uint8_t payload[3] = { TOKEN, 0x01, 0x01 };  // 💡 0x01 = Heartbeat, 0x01 = Node type
   esp_err_t result = esp_now_send(hubMAC, payload, sizeof(payload));
   if (result == ESP_OK) {
     Serial.println("💓 Heartbeat sent to Hub");
@@ -114,7 +114,7 @@ void setup() {
   WiFi.disconnect(true, true);
   delay(300);
 
-  WiFi.mode(WIFI_AP_STA);  // 💡 key stability line
+  WiFi.mode(WIFI_AP_STA);  // 💡 critical for channel locking
   WiFi.softAP(("bleamit-node-" + String(hubChannel)).c_str(), nullptr, hubChannel);
   delay(200);
 

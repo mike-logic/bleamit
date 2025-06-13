@@ -18,7 +18,7 @@ void logLine(const String& msg) {
   Serial.println(msg);
   logBuffer += msg + "\n";
   if (logBuffer.length() > 4096) {
-    logBuffer = logBuffer.substring(logBuffer.length() - 4096);  // keep last 4KB
+    logBuffer = logBuffer.substring(logBuffer.length() - 4096);
   }
 }
 
@@ -58,58 +58,41 @@ void handleArtNet() {
   }
 }
 
-const char DASHBOARD_HTML[] PROGMEM = R"rawlite(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>BLEAMIT Standalone Dashboard</title>
-  <style>
-    body { font-family: monospace; background: #111; color: #eee; padding: 1em; }
-    h1 { color: #0ff; }
-    pre { background: #222; padding: 1em; border: 1px solid #333; height: 300px; overflow-y: scroll; white-space: pre-wrap; }
-  </style>
-</head>
-<body>
-  <h1>BLEAMIT Standalone Node</h1>
-  <p>BLE Name: <b>bleamit-node</b></p>
-  <p>WiFi: <span id="ssid"></span> | IP: <span id="ip"></span></p>
-  <h2>Console</h2>
-  <pre id="log">Loading...</pre>
-
-  <script>
-    function refreshLog() {
-      fetch("/log").then(r => r.text()).then(txt => {
-        document.getElementById("log").textContent = txt;
-        document.getElementById("log").scrollTop = document.getElementById("log").scrollHeight;
-      });
-    }
-    function refreshInfo() {
-      fetch("/info").then(r => r.json()).then(info => {
-        document.getElementById("ssid").textContent = info.ssid;
-        document.getElementById("ip").textContent = info.ip;
-      });
-    }
-    refreshLog();
-    refreshInfo();
-    setInterval(refreshLog, 2000);
-  </script>
-</body>
-</html>
-)rawlite";
-
 void setupWebServer() {
   server.on("/", []() {
-    server.send_P(200, "text/html", DASHBOARD_HTML);
+    server.send(200, "text/html", R"rawlite(
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>BLEAMIT Console</title>
+        <style>
+          body { background: #111; color: #eee; font-family: monospace; padding: 1em; }
+          h1 { color: #0ff; }
+          pre { background: #222; padding: 1em; height: 300px; overflow-y: scroll; border: 1px solid #333; }
+        </style>
+      </head>
+      <body>
+        <h1>bleamit Standalone Console</h1>
+        <pre id="log">Loading...</pre>
+        <script>
+          function updateLog() {
+            fetch('/log').then(r => r.text()).then(t => {
+              let log = document.getElementById('log');
+              log.textContent = t;
+              log.scrollTop = log.scrollHeight;
+            });
+          }
+          setInterval(updateLog, 2000);
+          updateLog();
+        </script>
+      </body>
+      </html>
+    )rawlite");
   });
 
   server.on("/log", []() {
     server.send(200, "text/plain", logBuffer);
-  });
-
-  server.on("/info", []() {
-    String json = "{\"ssid\":\"" + WiFi.SSID() + "\",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
-    server.send(200, "application/json", json);
   });
 
   server.begin();

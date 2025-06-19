@@ -16,31 +16,41 @@ src="https://unpkg.com/esp-web-tools@9/dist/web/install-button.js"></script>
       margin: auto;
       line-height: 1.6;
     }
+
     h1 {
       font-size: 2rem;
     }
+
     .description {
       margin-bottom: 2rem;
     }
+
     .selector {
       display: grid;
       gap: 1rem;
       margin: 2rem 0 1rem;
     }
+
     .selector button {
       padding: 0.75rem;
       font-size: 1rem;
       border: none;
       border-radius: 8px;
       cursor: pointer;
-      transition: background 0.3s;
+      transition: all 0.2s;
     }
-    .base     { background: #3498db; }
-    .hub      { background: #2ecc71; }
-    .node     { background: #f1c40f; color: #000; }
+
+    .base       { background: #3498db; }
+    .hub        { background: #2ecc71; }
+    .node       { background: #f1c40f; color: #000; }
     .standalone { background: #e67e22; }
+
     .selected {
-      box-shadow: 0 0 10px 2px #fff;
+      background: #ffffff !important;
+      color: #000 !important;
+      font-weight: bold;
+      border: 2px solid #4ecdc4;
+      box-shadow: 0 0 8px 2px #4ecdc4;
     }
 
     esp-web-install-button::part(button) {
@@ -51,12 +61,24 @@ src="https://unpkg.com/esp-web-tools@9/dist/web/install-button.js"></script>
       border-radius: 6px;
       border: none;
       cursor: pointer;
+      transition: background 0.2s ease-in-out;
     }
 
     .footer {
       margin-top: 3rem;
       font-size: 0.9rem;
       opacity: 0.7;
+    }
+
+    .role-desc {
+      font-size: 0.95rem;
+      margin-top: 0.25rem;
+      opacity: 0.8;
+    }
+
+    .selected-role {
+      font-size: 1.3rem;
+      font-weight: bold;
     }
   </style>
 </head>
@@ -65,47 +87,53 @@ src="https://unpkg.com/esp-web-tools@9/dist/web/install-button.js"></script>
   <h1>BLEAMIT ESP32 Web Flasher</h1>
 
   <div class="description">
-    <p><strong>BLEAMIT</strong> is a wireless lighting sync system using 
-ESP32 devices to broadcast and receive RGB color updates via ESP-NOW and 
-BLE. Devices can act as a Base, Hub, Node, or Standalone depending on 
-deployment needs.</p>
-    <ul>
-      <li><strong>🟦 Base</strong>: Receives Art-Net and transmits color 
-via ESP-NOW</li>
-      <li><strong>🟩 Hub</strong>: Relays ESP-NOW packets across large 
-spaces</li>
-      <li><strong>🟨 Node</strong>: Receives ESP-NOW color and advertises 
-via BLE</li>
-      <li><strong>🟧 Standalone</strong>: Listens for Art-Net and 
-advertises via BLE</li>
-    </ul>
+    <p><strong>BLEAMIT</strong> is a synchronized lighting system built 
+around ESP32 boards using ESP-NOW and BLE. It's designed for theaters, 
+events, art installations, or mobile interaction zones where multiple 
+devices must reflect real-time color states — even without traditional 
+Wi-Fi.</p>
+    <p>You can flash your ESP32 device by choosing the intended role below 
+and clicking "Install."</p>
   </div>
 
-  <h3>Select Firmware Type:</h3>
+  <h3>⬇ Select Firmware Type:</h3>
   <div class="selector">
     <button id="btn-base" class="base" onclick="setRole('base')">🟦 Base 
 Firmware</button>
+    <div class="role-desc">Receives Art-Net color via Wi-Fi and sends it 
+to hubs/nodes via ESP-NOW. Central controller.</div>
+
     <button id="btn-hub" class="hub" onclick="setRole('hub')">🟩 Hub 
 Firmware</button>
+    <div class="role-desc">Relays ESP-NOW color data from the base to 
+nodes. Use in large venues or extended mesh networks.</div>
+
     <button id="btn-node" class="node" onclick="setRole('node')">🟨 Node 
 Firmware</button>
+    <div class="role-desc">Receives ESP-NOW color and broadcasts it over 
+BLE. Phones nearby update based on this broadcast.</div>
+
     <button id="btn-standalone" class="standalone" 
 onclick="setRole('standalone')">🟧 Standalone Firmware</button>
+    <div class="role-desc">Self-contained: receives Art-Net and broadcasts 
+via BLE directly. No ESP-NOW used.</div>
   </div>
 
-  <p><strong>Selected firmware:</strong> <span 
-id="current-role">Base</span></p>
+  <p><strong>Selected Firmware:</strong> <span id="current-role" 
+class="selected-role">Base</span></p>
 
   <esp-web-install-button id="flash-button" 
 manifest="manifest-base.json"></esp-web-install-button>
 
-  <p>Make sure your ESP32 is connected via USB. You may need to hold the 
-BOOT button while connecting.</p>
-  <p>Project repo: <a href="https://github.com/mike-logic/bleamit" 
+  <p>Make sure your ESP32 is connected via USB. Some boards may require 
+you to hold the <code>BOOT</code> button while connecting.</p>
+
+  <p>📁 View the full source code: <a 
+href="https://github.com/mike-logic/bleamit" 
 target="_blank">github.com/mike-logic/bleamit</a></p>
 
   <div class="footer">
-    &copy; 2025 Mike Williams — BLEAMIT Project
+    &copy; 2025 Mike Williams · BLEAMIT Project
   </div>
 
   <script>
@@ -117,16 +145,28 @@ target="_blank">github.com/mike-logic/bleamit</a></p>
     };
 
     function setRole(role) {
-      document.getElementById("flash-button").setAttribute("manifest", 
-buttonMap[role]);
+      const flashBtn = document.getElementById("flash-button");
+      flashBtn.setAttribute("manifest", buttonMap[role]);
       document.getElementById("current-role").textContent = 
 role.charAt(0).toUpperCase() + role.slice(1);
+
+      // highlight selected
       ['base','hub','node','standalone'].forEach(r => {
         document.getElementById("btn-" + r).classList.remove('selected');
       });
       document.getElementById("btn-" + role).classList.add('selected');
+
+      // update flash button label (inside shadow DOM)
+      setTimeout(() => {
+        try {
+          const btn = flashBtn.shadowRoot.querySelector("button");
+          if (btn) btn.innerText = "Flash " + role.charAt(0).toUpperCase() 
++ role.slice(1);
+        } catch (e) {}
+      }, 100);
     }
 
+    // Initial state
     setRole('base');
   </script>
 

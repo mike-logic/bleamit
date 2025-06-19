@@ -1,0 +1,16 @@
+{
+  "name": "BLEAMIT Node Firmware",
+  "version": "1.0.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "firmware-node.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ]
+}
+

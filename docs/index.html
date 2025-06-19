@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>BLEAMIT Web Flasher</title>
+  <script type="module" 
+src="https://unpkg.com/esp-web-tools@9/dist/web/install-button.js"></script>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #eee;
+      padding: 2rem;
+      max-width: 720px;
+      margin: auto;
+      line-height: 1.6;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+    .selector {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin: 2rem 0 1rem;
+    }
+    .selector button {
+      flex: 1;
+      padding: 0.75rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .base     { background: #3498db; }
+    .hub      { background: #2ecc71; }
+    .node     { background: #f1c40f; color: #000; }
+    .standalone { background: #e67e22; }
+
+    esp-web-install-button::part(button) {
+      background: #4ecdc4;
+      color: #000;
+      padding: 0.75rem 1.5rem;
+      font-size: 1.1rem;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .footer {
+      margin-top: 3rem;
+      font-size: 0.9rem;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>BLEAMIT ESP32 Web Flasher</h1>
+  <p>Flash your ESP32 with the appropriate firmware for your device’s role 
+in the <strong>BLEAMIT lighting control system</strong>. Select a role 
+below and click "Install".</p>
+
+  <div class="selector">
+    <button class="base" onclick="setRole('base')">🟦 Base</button>
+    <button class="hub" onclick="setRole('hub')">🟩 Hub</button>
+    <button class="node" onclick="setRole('node')">🟨 Node</button>
+    <button class="standalone" onclick="setRole('standalone')">🟧 
+Standalone</button>
+  </div>
+
+  <div id="flasher">
+    <esp-web-install-button id="flash-button" 
+manifest="manifest-base.json"></esp-web-install-button>
+  </div>
+
+  <p>Ensure your ESP32 is connected via USB. Some boards may require 
+holding the <code>BOOT</code> button during flashing.</p>
+
+  <p>Visit the full project repo at: <a 
+href="https://github.com/mike-logic/bleamit" 
+target="_blank">github.com/mike-logic/bleamit</a></p>
+
+  <div class="footer">
+    &copy; 2025 Mike Williams · Open source hardware & software · 
+<em>BLEAMIT</em>
+  </div>
+
+  <script>
+    function setRole(role) {
+      const manifestMap = {
+        base: 'manifest-base.json',
+        hub: 'manifest-hub.json',
+        node: 'manifest-node.json',
+        standalone: 'manifest-standalone.json'
+      };
+      const button = document.getElementById('flash-button');
+      button.setAttribute('manifest', manifestMap[role]);
+    }
+  </script>
+</body>
+</html>
+

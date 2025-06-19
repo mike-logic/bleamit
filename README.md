@@ -1,3 +1,4 @@
+
 # bleamit
 
 **bleamit** is a synchronized lighting system using ESP32 devices with ESP-NOW and BLE to broadcast color states to mobile devices in large environments. It supports Art-Net input, heartbeat tracking, and modular roles (base, hub, node).
@@ -17,6 +18,20 @@
 - **hub.ino** — Optional relay device (only needed for large areas)
 - **node.ino** — Upload to nodes that will BLE advertise
 - **standalone.ino** — For small installations that only need one broadcaster
+
+### 🧪 Try It Instantly in Your Browser
+
+You can flash firmware to any ESP32 directly from your browser using **Chrome** or **Edge** — no IDE required.
+
+👉 [**Open BLEAMIT Web Flasher**](https://mike-logic.github.io/bleamit/)
+
+Select one of the following roles and click "Install":
+- 🟦 **Base** — receives Art-Net and sends color via ESP-NOW
+- 🟩 **Hub** — relays ESP-NOW from base to nodes
+- 🟨 **Node** — receives color via ESP-NOW and advertises via BLE
+- 🟧 **Standalone** — directly listens for Art-Net and advertises via BLE
+
+This requires a compatible ESP32 Dev Module connected via USB.
 
 ### 2. Connect Base or Standalone to Wi-Fi
 

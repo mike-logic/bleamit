@@ -32,35 +32,45 @@ def make_artdmx_packet(r, g, b):
     packet += bytes(dmx_data)
     return packet
 
+def interpolate_color(start, end, steps):
+    for i in range(steps):
+        r = int(start[0] + (end[0] - start[0]) * i / steps)
+        g = int(start[1] + (end[1] - start[1]) * i / steps)
+        b = int(start[2] + (end[2] - start[2]) * i / steps)
+        yield (r, g, b)
+
 def send_artnet_loop(sock, ip):
-    colors = [
-        (255, 0, 0),
-        (0, 255, 0),
-        (0, 0, 255),
-        (255, 255, 0),
-        (0, 255, 255),
-        (255, 0, 255),
-        (255, 255, 255),
-        (0, 0, 0)
+    print("🌈 Starting DMX fade show...")
+
+    base_colors = [
+        (255, 0, 0),     # Red
+        (255, 255, 0),   # Yellow
+        (0, 255, 0),     # Green
+        (0, 255, 255),   # Cyan
+        (0, 0, 255),     # Blue
+        (255, 0, 255),   # Magenta
+        (255, 255, 255), # White flash
+        (0, 0, 0),       # Blackout
     ]
-    last_color = (-1, -1, -1)
+
+    fade_steps = 8
+    delay = 0.08  # 80ms per frame
+
     i = 0
-
     while RUNNING:
-        r, g, b = colors[i % len(colors)]
-        rgb = (r, g, b)
+        start = base_colors[i % len(base_colors)]
+        end = base_colors[(i + 1) % len(base_colors)]
 
-        if rgb != last_color:
-            packet = make_artdmx_packet(r, g, b)
+        for rgb in interpolate_color(start, end, fade_steps):
+            if not RUNNING:
+                break
+            packet = make_artdmx_packet(*rgb)
             sock.sendto(packet, (ip, ARTNET_PORT))
             send_times[rgb] = time.time()
-            print(f"{timestamp()} Sent: R={r} G={g} B={b}")
-            last_color = rgb
-        else:
-            print(f"{timestamp()} Skipped duplicate: R={r} G={g} B={b}")
+            print(f"{timestamp()} Sent: R={rgb[0]} G={rgb[1]} B={rgb[2]}")
+            time.sleep(delay)
 
         i += 1
-        time.sleep(2)
 
 def parse_flutter_logs():
     pattern = re.compile(r"Color update: R=(\d+) G=(\d+) B=(\d+)")
@@ -89,7 +99,7 @@ def main():
     global RUNNING
 
     if len(sys.argv) < 2:
-        print("Usage: python testapp.py <ESP32_IP>")
+        print("Usage: python testapp_fade.py <ESP32_IP>")
         sys.exit(1)
 
     target_ip = sys.argv[1]

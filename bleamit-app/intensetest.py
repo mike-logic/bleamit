@@ -5,6 +5,7 @@ import subprocess
 import threading
 import re
 from datetime import datetime
+import random
 
 ARTNET_PORT = 6454
 UNIVERSE = 0
@@ -17,10 +18,10 @@ def timestamp():
 
 def make_artdmx_packet(r, g, b):
     packet = bytearray()
-    packet += b'Art-Net\x00'
-    packet += bytes([0x00, 0x50])
-    packet += bytes([0x00, 0x0e])
-    packet += bytes([0x00, 0x00])
+    packet += b'Art-Net\x00'              # ID
+    packet += bytes([0x00, 0x50])         # OpCode: ArtDMX
+    packet += bytes([0x00, 0x0e])         # Protocol version
+    packet += bytes([0x00, 0x00])         # Sequence, Physical
     packet += UNIVERSE.to_bytes(2, 'little')
     packet += (CHANNELS).to_bytes(2, 'big')
 
@@ -33,34 +34,19 @@ def make_artdmx_packet(r, g, b):
     return packet
 
 def send_artnet_loop(sock, ip):
-    colors = [
-        (255, 0, 0),
-        (0, 255, 0),
-        (0, 0, 255),
-        (255, 255, 0),
-        (0, 255, 255),
-        (255, 0, 255),
-        (255, 255, 255),
-        (0, 0, 0)
-    ]
-    last_color = (-1, -1, -1)
-    i = 0
-
+    global RUNNING
+    print("🎆 Starting intense light show...")
     while RUNNING:
-        r, g, b = colors[i % len(colors)]
-        rgb = (r, g, b)
+        r = random.randint(0, 255)
+        g = random.randint(0, 255)
+        b = random.randint(0, 255)
 
-        if rgb != last_color:
-            packet = make_artdmx_packet(r, g, b)
-            sock.sendto(packet, (ip, ARTNET_PORT))
-            send_times[rgb] = time.time()
-            print(f"{timestamp()} Sent: R={r} G={g} B={b}")
-            last_color = rgb
-        else:
-            print(f"{timestamp()} Skipped duplicate: R={r} G={g} B={b}")
+        packet = make_artdmx_packet(r, g, b)
+        sock.sendto(packet, (ip, ARTNET_PORT))
+        send_times[(r, g, b)] = time.time()
 
-        i += 1
-        time.sleep(2)
+        print(f"{timestamp()} Sent: R={r} G={g} B={b}")
+        time.sleep(0.1)  # 100ms between frames — simulate strobe/chase
 
 def parse_flutter_logs():
     pattern = re.compile(r"Color update: R=(\d+) G=(\d+) B=(\d+)")

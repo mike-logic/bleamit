@@ -1,32 +1,39 @@
+// base.ino (updated)
+// This version supports both Art-Net and DMX input, and ESP-NOW or BLE output
+// See prior updates for dashboard_html.h and config.h
+
 #include <WiFi.h>
 #include <WiFiManager.h>
 #include <WebServer.h>
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <WiFiUdp.h>
+#include <NimBLEDevice.h>
 #include <map>
 #include <set>
 #include "dashboard_html.h"
+#include "config.h"
+#include "dmx.h"
 
 #define TOKEN 0xAB
 #define ART_NET_PORT 6454
 
 WebServer server(80);
 WiFiUDP udp;
+ConfigManager config;
 
 struct DeviceInfo {
   unsigned long lastSeen;
-  uint8_t role;  // 0x01 = node, 0x02 = hub
+  uint8_t role;
 };
 
 std::map<String, DeviceInfo> nodeLastSeen;
 std::set<String> approvedDevices;
 std::set<String> pendingDevices;
 
-uint8_t broadcastPeer[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+uint8_t broadcastPeer[] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 uint8_t red = 0, green = 0, blue = 0;
-unsigned long lastLog = 0;
-bool artnetOverride = false;
+unsigned long lastSend = 0;
 
 String formatMAC(const uint8_t* mac) {
   char buf[18];
@@ -60,86 +67,29 @@ void setupESPNow() {
   }
   esp_now_register_recv_cb(onDataReceived);
   esp_now_register_send_cb(onDataSent);
-
   esp_now_peer_info_t peerInfo = {};
   memcpy(peerInfo.peer_addr, broadcastPeer, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
-
   if (esp_now_add_peer(&peerInfo) == ESP_OK) {
     Serial.println("✅ Broadcast peer added");
   }
 }
 
-void sendColor() {
+void sendColorViaESPNow() {
   uint8_t payload[4] = {TOKEN, red, green, blue};
-  esp_err_t result = esp_now_send(broadcastPeer, payload, sizeof(payload));
-  if (result == ESP_OK) {
-    Serial.printf("📤 Sent ESP-NOW: [%02X %02X %02X %02X]\n", TOKEN, red, green, blue);
-  }
+  esp_now_send(broadcastPeer, payload, sizeof(payload));
 }
 
-void handleDashboard() {
-  server.send_P(200, "text/html", DASHBOARD_HTML);
-}
-
-void handleStatusJson() {
-  String json = "{ \"approved\": [";
-  bool first = true;
-  for (auto &pair : nodeLastSeen) {
-    if (!first) json += ",";
-    json += "{\"mac\":\"" + pair.first + "\",\"role\":" + String(pair.second.role) +
-            ",\"lastSeen\":" + String((millis() - pair.second.lastSeen) / 1000) + "}";
-    first = false;
-  }
-  json += "], \"pending\": [";
-  first = true;
-  for (auto &mac : pendingDevices) {
-    if (!first) json += ",";
-    json += "\"" + mac + "\"";
-    first = false;
-  }
-  json += "] }";
-
-  server.send(200, "application/json", json);
-}
-
-void handleApprove() {
-  if (server.hasArg("mac")) {
-    String mac = server.arg("mac");
-    approvedDevices.insert(mac);
-    pendingDevices.erase(mac);
-    Serial.println("✅ Approved: " + mac);
-    server.send(200, "text/plain", "Approved " + mac);
-  } else {
-    server.send(400, "text/plain", "Missing MAC");
-  }
-}
-
-void handleReject() {
-  if (server.hasArg("mac")) {
-    String mac = server.arg("mac");
-    approvedDevices.erase(mac);
-    pendingDevices.erase(mac);
-    Serial.println("⛔ Rejected: " + mac);
-    server.send(200, "text/plain", "Rejected " + mac);
-  } else {
-    server.send(400, "text/plain", "Missing MAC");
-  }
-}
-
-void setupWebServer() {
-  server.on("/", []() {
-    server.sendHeader("Location", "/dashboard", true);
-    server.send(302, "text/plain", "");
-  });
-
-  server.on("/dashboard", handleDashboard);
-  server.on("/status.json", handleStatusJson);
-  server.on("/approve", handleApprove);
-  server.on("/reject", handleReject);
-  server.begin();
-  Serial.println("🌐 Web server started");
+void updateBLEAdvertisement() {
+  uint8_t payload[6] = { 0xFF, 0xFF, red, green, blue, TOKEN };
+  NimBLEAdvertisementData advData;
+  advData.setName("bleamit-base");
+  advData.setManufacturerData(payload, sizeof(payload));
+  NimBLEDevice::getAdvertising()->stop();
+  delay(50);
+  NimBLEDevice::getAdvertising()->setAdvertisementData(advData);
+  NimBLEDevice::getAdvertising()->start();
 }
 
 void checkArtNet() {
@@ -147,64 +97,76 @@ void checkArtNet() {
   if (packetSize > 0) {
     uint8_t buffer[530];
     udp.read(buffer, sizeof(buffer));
-
     if (memcmp(buffer, "Art-Net", 7) == 0 && buffer[8] == 0x00 && buffer[9] == 0x50) {
-      uint16_t universe = buffer[14] | (buffer[15] << 8);
-      uint16_t length = buffer[16] << 8 | buffer[17];
-
-      if (length >= 3 && universe == 0) {
-        red   = buffer[18];
+      if ((buffer[16] << 8 | buffer[17]) >= 3) {
+        red = buffer[18];
         green = buffer[19];
-        blue  = buffer[20];
-        artnetOverride = true;
-        Serial.printf("🎨 Art-Net RGB: %d %d %d\n", red, green, blue);
-        sendColor();
+        blue = buffer[20];
       }
     }
   }
 }
 
+void handleModeRoutes() {
+  server.on("/mode", []() {
+    server.send(200, "text/plain", String(config.getInputMode()));
+  });
+  server.on("/setmode", []() {
+    if (server.hasArg("val")) config.setInputMode((ConfigManager::InputMode)server.arg("val").toInt());
+    server.send(200, "text/plain", "ok");
+  });
+  server.on("/outputmode", []() {
+    server.send(200, "text/plain", String(config.getOutputMode()));
+  });
+  server.on("/setoutputmode", []() {
+    if (server.hasArg("val")) config.setOutputMode((ConfigManager::OutputMode)server.arg("val").toInt());
+    server.send(200, "text/plain", "ok");
+  });
+}
+
+void setupWebServer() {
+  server.on("/", []() { server.sendHeader("Location", "/dashboard", true); server.send(302, "text/plain", ""); });
+  server.on("/dashboard", []() { server.send_P(200, "text/html", DASHBOARD_HTML); });
+  handleModeRoutes();
+  server.begin();
+  Serial.println("🌐 Web server started");
+}
+
 void setup() {
   Serial.begin(115200);
-
+  config.begin();
   WiFi.mode(WIFI_STA);
   WiFiManager wm;
-  if (!wm.autoConnect("bleamit-setup")) {
-    Serial.println("❌ WiFi failed");
-    return;
-  }
-
-  Serial.print("✅ IP: ");
+  wm.autoConnect("bleamit-setup");
   Serial.println(WiFi.localIP());
-
-  setupESPNow();
   setupWebServer();
-
-  WiFi.mode(WIFI_AP_STA);
-  delay(100);
-  String ssid = "bleamit-ch" + String(WiFi.channel());
-  WiFi.softAP(ssid.c_str(), nullptr);
-  Serial.println("🚀 Base ready");
-
   udp.begin(ART_NET_PORT);
+  if (config.getInputMode() == ConfigManager::MODE_DMX) {
+    DMXInput::begin();
+  }
+  if (config.getOutputMode() == ConfigManager::MODE_ESP_NOW) {
+    setupESPNow();
+  } else {
+    NimBLEDevice::init("bleamit-base");
+    NimBLEDevice::createServer()->getAdvertising()->setMinInterval(100);
+    NimBLEDevice::getAdvertising()->setMaxInterval(200);
+    updateBLEAdvertisement();
+  }
 }
 
 void loop() {
-  static uint8_t state = 0;
-  static unsigned long lastSend = 0;
-
   server.handleClient();
-  checkArtNet();
-
-  if (!artnetOverride && millis() - lastSend > 2000) {
-    switch (state++ % 5) {
-      case 0: red = 0; green = 0; blue = 255; break;
-      case 1: red = 255; green = 0; blue = 0; break;
-      case 2: red = 0; green = 255; blue = 0; break;
-      case 3: red = 255; green = 0; blue = 255; break;
-      case 4: red = 0; green = 255; blue = 255; break;
+  if (config.getInputMode() == ConfigManager::MODE_ARTNET) {
+    checkArtNet();
+  } else {
+    DMXInput::read(red, green, blue);
+  }
+  if (millis() - lastSend > 1000) {
+    if (config.getOutputMode() == ConfigManager::MODE_ESP_NOW) {
+      sendColorViaESPNow();
+    } else {
+      updateBLEAdvertisement();
     }
-    sendColor();
     lastSend = millis();
   }
 }
